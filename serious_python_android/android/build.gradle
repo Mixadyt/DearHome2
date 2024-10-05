@@ -1,0 +1,96 @@
+group 'com.flet.serious_python_android'
+version '0.7.1'
+
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+
+    dependencies {
+        // The Android Gradle Plugin knows how to build native code with the NDK.
+        classpath 'com.android.tools.build:gradle:7.3.0'
+        classpath 'de.undercouch:gradle-download-task:4.1.2'
+    }
+}
+
+rootProject.allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+apply plugin: 'com.android.library'
+apply plugin: 'de.undercouch.download'
+
+android {
+    namespace "com.flet.serious_python_android"
+    
+    // Bumping the plugin compileSdkVersion requires all clients of this plugin
+    // to bump the version in their app.
+    compileSdkVersion 31
+
+    // Invoke the shared CMake build with the Android Gradle Plugin.
+    externalNativeBuild {
+        cmake {
+            path "../src/CMakeLists.txt"
+
+            // The default CMake version for the Android Gradle Plugin is 3.10.2.
+            // https://developer.android.com/studio/projects/install-ndk#vanilla_cmake
+            //
+            // The Flutter tooling requires that developers have CMake 3.10 or later
+            // installed. You should not increase this version, as doing so will cause
+            // the plugin to fail to compile for some customers of the plugin.
+            // version "3.10.2"
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+
+    defaultConfig {
+        minSdkVersion 16
+
+        ndk {
+            abiFilters 'arm64-v8a', 'armeabi-v7a', 'x86_64'
+        }
+    }
+}
+
+import de.undercouch.gradle.tasks.download.Download
+
+task downloadDistArchive(type: Download) {
+    src "https://github.com/flet-dev/serious-python/releases/download/v${version}/python-android-dist-v${version}.tar.gz"
+    dest new File(buildDir, "python-android-dist-v${version}.tar.gz")
+}
+
+task untarFile(dependsOn: downloadDistArchive, type: Copy) {
+    from tarTree(downloadDistArchive.dest)
+    into 'src/main/jniLibs'
+}
+
+task copyCustomDist(type: Exec) {
+    workingDir '.'
+    commandLine 'sh', 'bundle.sh'
+}
+
+task copyBuildDist(type: Copy) {
+    def srcDir = System.getenv('SERIOUS_PYTHON_BUILD_DIST')
+    if (srcDir != null) {
+        from srcDir
+        into 'src/main/jniLibs'
+    }
+}
+
+if (System.getenv('SERIOUS_PYTHON_P4A_DIST')) {
+    task copyOrUntar(dependsOn: 'copyCustomDist')
+} else if (System.getenv('SERIOUS_PYTHON_BUILD_DIST')) {
+    task copyOrUntar(dependsOn: 'copyBuildDist')
+} else {
+    task copyOrUntar(dependsOn: 'untarFile')
+}
+
+preBuild.dependsOn copyOrUntar
